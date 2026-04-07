@@ -383,7 +383,8 @@
   var todayISO='';
   function fetchAgenda(){
     var xhr=new XMLHttpRequest();
-    xhr.open('GET','/api/calendar',true);
+    var dashSecret = localStorage.getItem('dash-secret') || '';
+    xhr.open('GET','/api/calendar' + (dashSecret ? '?secret='+encodeURIComponent(dashSecret) : ''), true);
     xhr.onreadystatechange=function(){
       if(xhr.readyState!==4) return;
       var list=document.getElementById('agenda-list');
@@ -413,7 +414,15 @@
           }
           list.innerHTML=html;
         }catch(e){list.innerHTML='<div class="msg" style="color:'+c.segDim+'">ERR_</div>';}
-      }else{list.innerHTML='<div class="msg" style="color:'+c.segDim+'">NO CONN_</div>';}
+      } else if(xhr.status===401) {
+        var entered = prompt('Dashboard password:');
+        if(entered) {
+          localStorage.setItem('dash-secret', entered);
+          fetchCalendar();
+        } else {
+          list.innerHTML='<div class="msg" style="color:'+c.segDim+'">AUTH REQUIRED_</div>';
+        }
+      } else {list.innerHTML='<div class="msg" style="color:'+c.segDim+'">NO CONN_</div>';}
     };
     xhr.send();
   }
