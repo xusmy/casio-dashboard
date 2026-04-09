@@ -1,7 +1,7 @@
 // Vercel serverless function — eventos próximos 7 días
 // Calendarios configurados via variables de entorno (ver .env.example)
 
-const TZ = 'America/Argentina/Buenos_Aires';
+const TZ = 'Europe/Madrid';
 const DIAS_ES = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
 
 // Calendarios ICS (podés agregar/quitar los que quieras)
@@ -24,7 +24,7 @@ function parseICSDate(str) {
     return new Date(parseInt(str.slice(0,4)), parseInt(str.slice(4,6))-1, parseInt(str.slice(6,8)));
   }
   var y=str.slice(0,4),mo=str.slice(4,6),d=str.slice(6,8),h=str.slice(9,11),mi=str.slice(11,13),s=str.slice(13,15);
-  return new Date(y+'-'+mo+'-'+d+'T'+h+':'+mi+':'+s+(str.endsWith('Z')?'Z':'-03:00'));
+  return new Date(y+'-'+mo+'-'+d+'T'+h+':'+mi+':'+s+(str.endsWith('Z')?'Z':'+02:00'));
 }
 
 function parseICS(icsText, calName, todayStr, limitStr) {
@@ -85,7 +85,7 @@ module.exports = async function handler(req, res) {
   try {
     var now      = new Date();
     var todayStr = toARDateStr(now);
-    var limitStr = toARDateStr(new Date(now.getTime() + 7*24*60*60*1000));
+    var limitStr = toARDateStr(new Date(now.getTime() + 30*24*60*60*1000));
     var allEvents = [];
 
     // 1. Google Apps Script (devuelve JSON con títulos reales, útil para cuentas Workspace)
