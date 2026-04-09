@@ -4,16 +4,12 @@
 const TZ = 'Europe/Madrid';
 const DIAS_ES = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
 
-// Calendarios ICS (podés agregar/quitar los que quieras)
 const ICS_CALENDARS = [
   process.env.CAL_ICS_1 && { name: process.env.CAL_NAME_1 || 'Calendar 1', url: process.env.CAL_ICS_1 },
   process.env.CAL_ICS_2 && { name: process.env.CAL_NAME_2 || 'Calendar 2', url: process.env.CAL_ICS_2 },
 ].filter(Boolean);
 
-// Calendario via Google Apps Script (opcional — ver README para configurarlo)
-const APPS_SCRIPT_URL = process.env.CAL_APPS_SCRIPT_URL || null;
-
-function toARDateStr(date) {
+function toESDateStr(date) {
   return new Date(date.toLocaleString('en-US', { timeZone: TZ })).toISOString().slice(0, 10);
 }
 
@@ -24,10 +20,10 @@ function parseICSDate(str) {
     return new Date(parseInt(str.slice(0,4)), parseInt(str.slice(4,6))-1, parseInt(str.slice(6,8)));
   }
   var y=str.slice(0,4),mo=str.slice(4,6),d=str.slice(6,8),h=str.slice(9,11),mi=str.slice(11,13),s=str.slice(13,15);
-  return new Date(y+'-'+mo+'-'+d+'T'+h+':'+mi+':'+s+(str.endsWith('Z')?'Z':'+02:00'));
+  return new Date(y+'-'+mo+'-'+d+'T'+h+':'+mi+':'+s+(str.endsWith('Z')?'Z':'+01:00'));
 }
 
-function parseICS(icsText, calName, todayStr, limitStr) {
+function parseICS(icsText, calName) {
   var events = [];
   var lines = icsText.replace(/\r\n[ \t]/g,'').split(/\r\n|\r|\n/);
   var current = null;
@@ -41,21 +37,18 @@ function parseICS(icsText, calName, todayStr, limitStr) {
       if (start) {
         var startDate = parseICSDate(start);
         if (startDate) {
-          var startStr = toARDateStr(startDate);
-          if (startStr >= todayStr && startStr <= limitStr) {
-            var isAllDay = start.length === 8;
-            events.push({
-              title:    current.summary || '(sin título)',
-              date:     startStr,
-              dayLabel: DIAS_ES[startDate.getDay()],
-              dateNum:  startStr.slice(8,10)+'/'+startStr.slice(5,7),
-              start:    isAllDay ? null : startDate.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit', timeZone: TZ }),
-              end:      (!isAllDay && current.dtend) ? parseICSDate(current.dtend).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit', timeZone: TZ }) : null,
-              allDay:   isAllDay,
-              calendar: calName,
-              sortKey:  startStr + (isAllDay ? 'T00:00' : startDate.toISOString().slice(10))
-            });
-          }
+          var startStr = toESDateStr(startDate);
+          var isAllDay = start.length === 8;
+          events.push({
+            title:    current.summary || '(sin título)',
+            date:     startStr,
+            dayLabel: DIAS_ES[startDate.getDay()],
+            dateNum:  startStr.slice(8,10)+'/'+startStr.slice(5,7),
+            start:    isAllDay ? null : startDate.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', timeZone: TZ }),
+            allDay:   isAllDay,
+            calendar: calName,
+            sortKey:  startStr + (isAllDay ? 'T00:00' : startDate.toISOString().slice(10))
+          });
         }
       }
       current = null;
@@ -75,7 +68,6 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
 
-  // Protect with secret if DASH_SECRET env var is set
   var secret = process.env.DASH_SECRET;
   if (secret && req.query.secret !== secret) {
     res.status(401).json({ error: 'Unauthorized' });
@@ -83,43 +75,26 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    var now      = new Date();
-    var todayStr = toARDateStr(now);
-    var limitStr = toARDateStr(new Date(now.getTime() + 30*24*60*60*1000));
     var allEvents = [];
-
-    // 1. Google Apps Script (devuelve JSON con títulos reales, útil para cuentas Workspace)
-    if (APPS_SCRIPT_URL) {
-      try {
-        var resp = await fetch(APPS_SCRIPT_URL, { redirect: 'follow' });
-        if (resp.ok) {
-          var data = await resp.json();
-          if (data.events) {
-            data.events.forEach(function(ev) {
-              if (ev.date >= todayStr && ev.date <= limitStr) {
-                ev.sortKey = ev.date + (ev.allDay ? 'T00:00' : 'T'+(ev.start||'00:00'));
-                allEvents.push(ev);
-              }
-            });
-          }
-        }
-      } catch(e) { console.error('Error Apps Script:', e.message); }
-    }
-
-    // 2. Calendarios ICS
     for (var i=0; i<ICS_CALENDARS.length; i++) {
       var cal = ICS_CALENDARS[i];
-      try {
-        var icsResp = await fetch(cal.url, { headers: { 'User-Agent': 'casio-dashboard/1.0' } });
-        if (icsResp.ok) {
-          var text = await icsResp.text();
-          allEvents = allEvents.concat(parseICS(text, cal.name, todayStr, limitStr));
-        }
-      } catch(e) { console.error('Error '+cal.name+':', e.message); }
+      var icsResp = await fetch(cal.url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (icsResp.ok) {
+        var text = await icsResp.text();
+        allEvents = allEvents.concat(parseICS(text, cal.name));
+      }
     }
 
-    allEvents.sort(function(a, b) { return a.sortKey.localeCompare(b.sortKey); });
-    res.status(200).json({ events: allEvents, count: allEvents.length, today: todayStr });
+    // Filtrar solo los próximos 30 días para no saturar el iPad
+    var todayStr = toESDateStr(new Date());
+    var limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() + 30);
+    var limitStr = toESDateStr(limitDate);
+
+    var filtered = allEvents.filter(ev => ev.date >= todayStr && ev.date <= limitStr);
+    filtered.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+    res.status(200).json({ events: filtered, count: filtered.length, today: todayStr });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
