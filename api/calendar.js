@@ -91,9 +91,9 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const todayStr = toESDateStr(new Date());
+const todayStr = toESDateStr(new Date());
     const limitDate = new Date();
-    limitDate.setDate(limitDate.getDate() + 30); // Mirar 30 días vista
+    limitDate.setDate(limitDate.getDate() + 7); // Volvemos a los 7 días
     const limitStr = toESDateStr(limitDate);
 
     // Filtrar por fecha
